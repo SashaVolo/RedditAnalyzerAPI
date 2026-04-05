@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reddit Analyzer UI</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #DAE0E6; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+        h2 { margin-top: 0; color: #1c1c1c; text-align: center; }
+        label { display: block; margin-top: 15px; font-weight: bold; color: #333; font-size: 14px; }
+        input { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        button { width: 100%; padding: 12px; margin-top: 25px; background-color: #FF4500; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background-color: #e03d00; }
+        
+        #downloadBtn { background-color: #4CAF50; display: none; margin-top: 15px; }
+        #downloadBtn:hover { background-color: #45a049; }
+        #resultBox { margin-top: 20px; background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; display: none; white-space: pre-wrap; word-wrap: break-word; }
+        #status { text-align: center; margin-top: 15px; font-size: 14px; color: #555; font-weight: bold;}
+    
+        #resultBox { 
+            margin-top: 20px; 
+            background: #1e1e1e; 
+            padding: 15px; 
+            border-radius: 8px; 
+            max-height: 400px; 
+            overflow-y: auto; 
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px; 
+            line-height: 1.5; 
+            display: none; 
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+            border: 1px solid #333;
+        }
+
+        /* Кольори для JSON */
+        .json-key { color: #9CDCFE; }      /* Блакитний для ключів */
+        .json-string { color: #CE9178; }   /* Помаранчевий для рядків */
+        .json-boolean { color: #569CD6; }  /* Синій для true/false */
+        .json-null { color: #C586C0; }     /* Фіолетовий для null */
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Reddit Analyzer</h2>
+        
+        <label>Сабреддіт (наприклад, r/csharp):</label>
+        <input type="text" id="subreddit" value="r/csharp" placeholder="r/gaming">
+
+        <label>Ключові слова (через кому):</label>
+        <input type="text" id="keywords" value="api, web, help, blazor" placeholder="game, bug, release">
+
+        <label>Ліміт постів (від 1 до 100):</label>
+        <input type="number" id="limit" value="25" min="1" max="100" placeholder="25">
+
+        <button onclick="analyze()" id="analyzeBtn">Аналізувати</button>
+        <div id="status"></div>
+
+        <div id="resultBox"></div>
+        <button id="downloadBtn">Завантажити як JSON</button>
+    </div>
+
+    <script>
+        let currentFileUrl = null;
+
+        function syntaxHighlight(json) {
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'json-null';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        async function analyze() {
+            const statusDiv = document.getElementById('status');
+            const resultBox = document.getElementById('resultBox');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+
+            // Скидаємо старі результати перед новим пошуком
+            statusDiv.innerHTML = "Йде пошук... Зачекайте.";
+            resultBox.style.display = 'none';
+            downloadBtn.style.display = 'none';
+            analyzeBtn.disabled = true;
+
+            // Видаляємо попередній файл з пам'яті браузера, щоб не було витоку пам'яті
+            if (currentFileUrl) window.URL.revokeObjectURL(currentFileUrl);
+
+            const requestBody = {
+                items: [{
+                    subreddit: document.getElementById('subreddit').value,
+                    keywords: document.getElementById('keywords').value.split(',').map(k => k.trim())
+                }],
+                limit: parseInt(document.getElementById('limit').value)
+            };
+
+            try {
+                const response = await fetch('/api/redditanalyzer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) throw new Error("Помилка на сервері.");
+
+                // Отримуємо файл як бінарні дані (Blob)
+                const blob = await response.blob();
+                
+                // Читаємо текст з файлу і показуємо його у віконці
+                const text = await blob.text();
+                const jsonData = JSON.parse(text);
+                
+                const prettyJson = JSON.stringify(jsonData, null, 4);
+                resultBox.innerHTML = syntaxHighlight(prettyJson);
+                resultBox.style.display = 'block';
+
+                // Генеруємо посилання на завантаження і показуємо кнопку
+                currentFileUrl = window.URL.createObjectURL(blob);
+                downloadBtn.onclick = () => {
+                    const a = document.createElement('a');
+                    a.href = currentFileUrl;
+                    a.download = 'reddit_analysis.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                };
+                downloadBtn.style.display = 'block';
+
+                statusDiv.innerHTML = "Успіх! Знайдено результати.";
+            } catch (error) {
+                statusDiv.innerHTML = "Сталася помилка. Можливо, сабреддіт не існує.";
+            } finally {
+                analyzeBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

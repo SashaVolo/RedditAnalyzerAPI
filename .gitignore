@@ -1,0 +1,24 @@
+# .NET Build artifacts
+bin/
+obj/
+
+# IDE specific files
+.vs/
+.vscode/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Logging
+Logs/
+*.log
+
+# Docker
+.dockerignore
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# User-specific settings (local secrets)
+appsettings.Development.json
